@@ -3,7 +3,9 @@ import matplotlib.pyplot as plt
 from scipy.integrate import odeint
 
 
-def multi_community_sir(y, t, beta, gamma, num_communities, travel_prob, population):
+def multi_community_sir(
+    y, t, beta, gamma, num_communities, travel_prob, population, community_params
+):
     # Unpack the state variables
     S = y[:num_communities]
     I = y[num_communities : 2 * num_communities]
@@ -15,20 +17,46 @@ def multi_community_sir(y, t, beta, gamma, num_communities, travel_prob, populat
 
     # Calculate infections within and between communities
     for i in range(num_communities):
+        # Get community-specific parameters
+        quarantine_effectiveness = community_params[i]["quarantine_effectiveness"]
+        social_distancing = community_params[i]["social_distancing"]
+        testing_rate = community_params[i]["testing_rate"]
+        vaccination_rate = community_params[i]["vaccination_rate"]
+
+        # Calculate effective transmission rate based on community characteristics
+        effective_beta = beta * (1 - social_distancing) * (1 - quarantine_effectiveness)
+
         # Within community infection
-        local_infection = beta * S[i] * I[i]
+        local_infection = effective_beta * S[i] * I[i]
 
         # Between community infections (travel)
         travel_infection = 0
         for j in range(num_communities):
             if i != j:
+                # Travel restrictions between communities
+                travel_restriction = min(
+                    community_params[i]["travel_restrictions"],
+                    community_params[j]["travel_restrictions"],
+                )
                 # Probability of travel and catching infection from other community
-                travel_infection += travel_prob * beta * S[i] * I[j]
+                travel_infection += (
+                    travel_prob
+                    * (1 - travel_restriction)
+                    * effective_beta
+                    * S[i]
+                    * I[j]
+                )
+
+        # Testing and isolation effect
+        testing_effect = testing_rate * I[i]
+
+        # Vaccination effect
+        vaccination_effect = vaccination_rate * S[i]
 
         # Total change rates
-        dSdt[i] = -local_infection - travel_infection
-        dIdt[i] = local_infection + travel_infection - gamma * I[i]
-        dRdt[i] = gamma * I[i]
+        dSdt[i] = -local_infection - travel_infection - vaccination_effect
+        dIdt[i] = local_infection + travel_infection - gamma * I[i] - testing_effect
+        dRdt[i] = gamma * I[i] + testing_effect + vaccination_effect
 
     return np.concatenate([dSdt, dIdt, dRdt])
 
@@ -37,14 +65,24 @@ def multi_community_sir(y, t, beta, gamma, num_communities, travel_prob, populat
 num_communities = 3
 population = 1000  # Population per community
 total_population = population * num_communities
-I0 = [
-    1,
-    0,
-    0,
-]  # Initial infected in each community (only first community has infection)
+I0 = [1, 0, 0]  # Initial infected in each community
+
+# Base disease parameters
 beta = 0.3  # Infection rate
 gamma = 0.1  # Recovery rate
 travel_prob = 0.05  # Probability of travel between communities per day
+
+# Community-specific parameters
+community_params = [
+    {
+        "quarantine_effectiveness": 0.0,  # 0 to 1
+        "social_distancing": 0.0,  # 0 to 1
+        "testing_rate": 0.0,  # 0 to 1
+        "vaccination_rate": 0.0,  # 0 to 1
+        "travel_restrictions": 0.0,  # 0 to 1
+    }
+    for _ in range(num_communities)
+]
 
 # Time points
 t = np.linspace(0, 100, 1000)
@@ -59,7 +97,7 @@ solution = odeint(
     multi_community_sir,
     initial_conditions,
     t,
-    args=(beta, gamma, num_communities, travel_prob, population),
+    args=(beta, gamma, num_communities, travel_prob, population, community_params),
 )
 
 # Extract results

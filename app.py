@@ -17,22 +17,89 @@ num_communities = st.sidebar.slider("Number of Communities", 2, 5, 3)
 # Population parameters
 population = st.sidebar.slider("Population per Community", 100, 10000, 1000, step=100)
 
-# Disease parameters
+# Base disease parameters
+st.sidebar.subheader("Base Disease Parameters")
 beta = st.sidebar.slider("Infection Rate (β)", 0.1, 0.5, 0.3, step=0.01)
 gamma = st.sidebar.slider("Recovery Rate (γ)", 0.05, 0.2, 0.1, step=0.01)
-travel_prob = st.sidebar.slider("Travel Probability", 0.01, 0.2, 0.05, step=0.01)
+travel_prob = st.sidebar.slider("Base Travel Probability", 0.01, 0.2, 0.05, step=0.01)
 
-# Initial conditions
-st.sidebar.subheader("Initial Conditions")
-initial_infected = []
+# Community-specific parameters
+st.sidebar.subheader("Community Characteristics")
+community_params = []
+
 for i in range(num_communities):
-    initial_infected.append(
-        st.sidebar.number_input(
-            f"Initial Infected in Community {i+1}",
-            min_value=0,
-            max_value=population,
-            value=1 if i == 0 else 0,
-        )
+    st.sidebar.markdown(f"### Community {i+1}")
+
+    # Create a container for each community's parameters
+    community_container = st.sidebar.container()
+
+    # Initial infected
+    initial_infected = community_container.number_input(
+        f"Initial Infected",
+        min_value=0,
+        max_value=population,
+        value=1 if i == 0 else 0,
+        key=f"initial_{i}",
+    )
+
+    # Quarantine effectiveness
+    quarantine_effectiveness = community_container.slider(
+        "Quarantine Effectiveness",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.0,
+        step=0.1,
+        key=f"quarantine_{i}",
+    )
+
+    # Social distancing
+    social_distancing = community_container.slider(
+        "Social Distancing",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.0,
+        step=0.1,
+        key=f"distancing_{i}",
+    )
+
+    # Testing rate
+    testing_rate = community_container.slider(
+        "Testing Rate",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.0,
+        step=0.1,
+        key=f"testing_{i}",
+    )
+
+    # Vaccination rate
+    vaccination_rate = community_container.slider(
+        "Vaccination Rate",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.0,
+        step=0.1,
+        key=f"vaccination_{i}",
+    )
+
+    # Travel restrictions
+    travel_restrictions = community_container.slider(
+        "Travel Restrictions",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.0,
+        step=0.1,
+        key=f"travel_{i}",
+    )
+
+    community_params.append(
+        {
+            "quarantine_effectiveness": quarantine_effectiveness,
+            "social_distancing": social_distancing,
+            "testing_rate": testing_rate,
+            "vaccination_rate": vaccination_rate,
+            "travel_restrictions": travel_restrictions,
+        }
     )
 
 # Time range
@@ -40,16 +107,19 @@ simulation_days = st.sidebar.slider("Simulation Days", 50, 200, 100)
 t = np.linspace(0, simulation_days, 1000)
 
 # Calculate initial conditions
-S0 = [population - initial_infected[i] for i in range(num_communities)]
+S0 = [population - initial_infected for i in range(num_communities)]
 R0 = [0] * num_communities
-initial_conditions = np.array(S0 + initial_infected + R0) / population
+initial_conditions = (
+    np.array(S0 + [1 if i == 0 else 0 for i in range(num_communities)] + R0)
+    / population
+)
 
 # Solve ODE
 solution = odeint(
     multi_community_sir,
     initial_conditions,
     t,
-    args=(beta, gamma, num_communities, travel_prob, population),
+    args=(beta, gamma, num_communities, travel_prob, population, community_params),
 )
 
 # Extract results
@@ -98,7 +168,7 @@ with col2:
         f"Pop per community: {population}\n"
         f"β: {beta}\n"
         f"γ: {gamma}\n"
-        f"Travel prob: {travel_prob}"
+        f"Base Travel prob: {travel_prob}"
     )
     plt.text(
         0.75,
@@ -110,12 +180,24 @@ with col2:
 
     st.pyplot(fig2)
 
-# Display statistics
-st.subheader("Simulation Statistics")
+# Display statistics and community characteristics
+st.subheader("Simulation Statistics and Community Characteristics")
 for i in range(num_communities):
     peak_infected = max(I[:, i])
     peak_day = t[np.argmax(I[:, i])]
+
     st.write(f"**Community {i+1}:**")
+    st.write("**Characteristics:**")
+    st.write(
+        f"- Quarantine Effectiveness: {community_params[i]['quarantine_effectiveness']:.2f}"
+    )
+    st.write(f"- Social Distancing: {community_params[i]['social_distancing']:.2f}")
+    st.write(f"- Testing Rate: {community_params[i]['testing_rate']:.2f}")
+    st.write(f"- Vaccination Rate: {community_params[i]['vaccination_rate']:.2f}")
+    st.write(f"- Travel Restrictions: {community_params[i]['travel_restrictions']:.2f}")
+
+    st.write("**Outcomes:**")
     st.write(f"- Peak infection: {peak_infected:.0f} individuals")
     st.write(f"- Day of peak infection: {peak_day:.1f}")
     st.write(f"- Final recovered: {R[-1, i]:.0f} individuals")
+    st.write("---")
